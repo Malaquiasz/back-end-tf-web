@@ -41,7 +41,7 @@ https://back-end-tf-web-silk.vercel.app/
   "contato_whatsapp": "55999999999",
   "contato_instagram": "@usuario",
   "palavra_passe": "senha123",
-  "imagem_base64": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQ..."
+  "imagem_url": "https://example.com/imagem.jpg"
 }
 ```
 - **Campos obrigatórios:** titulo, descricao, categoria, local_encontrado, palavra_passe

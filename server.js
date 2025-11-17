@@ -91,7 +91,7 @@ app.get("/objetos/:id", async (req, res) => {
 app.post("/objetos", async (req, res) => {
   console.log("Rota POST /objetos solicitada");
 
-  const { titulo, descricao, categoria, local_encontrado, contato_whatsapp, contato_instagram, palavra_passe, imagem_base64 } = req.body;
+  const { titulo, descricao, categoria, local_encontrado, contato_whatsapp, contato_instagram, palavra_passe, imagem_url } = req.body;
 
   // Validação básica
   if (!titulo || !descricao || !categoria || !local_encontrado || !palavra_passe) {
@@ -101,8 +101,8 @@ app.post("/objetos", async (req, res) => {
   const db = await conectarBD();
   try {
     const result = await db.query(
-      "INSERT INTO objeto (titulo, descricao, categoria, local_encontrado, contato_whatsapp, contato_instagram, palavra_passe, imagem_base64, data_encontrado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE) RETURNING *",
-      [titulo, descricao, categoria, local_encontrado, contato_whatsapp, contato_instagram, palavra_passe, imagem_base64]
+      "INSERT INTO objeto (titulo, descricao, categoria, local_encontrado, contato_whatsapp, contato_instagram, palavra_passe, imagem_url, data_encontrado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE) RETURNING *",
+      [titulo, descricao, categoria, local_encontrado, contato_whatsapp, contato_instagram, palavra_passe, imagem_url]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -117,7 +117,7 @@ app.post("/objetos", async (req, res) => {
 app.put("/objetos/:id", async (req, res) => {
   console.log(`Rota PUT /objetos/${req.params.id} solicitada`);
 
-  const { titulo, descricao, categoria, local_encontrado, contato_whatsapp, contato_instagram, palavra_passe, imagem_base64 } = req.body;
+  const { titulo, descricao, categoria, local_encontrado, contato_whatsapp, contato_instagram, palavra_passe, imagem_url } = req.body;
 
   if (!titulo || !descricao || !categoria || !local_encontrado || !palavra_passe) {
     return res.status(400).json({ error: "Campos obrigatórios: titulo, descricao, categoria, local_encontrado, palavra_passe" });
@@ -126,8 +126,8 @@ app.put("/objetos/:id", async (req, res) => {
   const db = await conectarBD();
   try {
     const result = await db.query(
-      "UPDATE objeto SET titulo = $1, descricao = $2, categoria = $3, local_encontrado = $4, contato_whatsapp = $5, contato_instagram = $6, palavra_passe = $7, imagem_base64 = $8 WHERE id = $9 RETURNING *",
-      [titulo, descricao, categoria, local_encontrado, contato_whatsapp, contato_instagram, palavra_passe, imagem_base64, req.params.id]
+      "UPDATE objeto SET titulo = $1, descricao = $2, categoria = $3, local_encontrado = $4, contato_whatsapp = $5, contato_instagram = $6, palavra_passe = $7, imagem_url = $8 WHERE id = $9 RETURNING *",
+      [titulo, descricao, categoria, local_encontrado, contato_whatsapp, contato_instagram, palavra_passe, imagem_url, req.params.id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Objeto não encontrado" });
