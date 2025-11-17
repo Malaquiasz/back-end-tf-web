@@ -3,7 +3,7 @@
 Este é um projeto web chamado "Achados e Perdidos Local" (ou "Centaurus"), desenvolvido como trabalho final da disciplina de WEB pelos alunos Andrey Paulino Costa, Hugo Barros Correia, João Pedro Almeida Caldeira, Luick Eduardo Neres Costa e Mizael Miranda Barbosa do IFNMG Campus Salinas.
 
 ## API URL
-https://back-end-tf-web.vercel.app/
+https://back-end-tf-web-silk.vercel.app/
 
 ## Endpoints da API
 
