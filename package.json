@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "API para plataforma de objetos perdidos no IFNMG-Campus Salinas",
   "main": "server.js",
-  "scripts": {},
+  "scripts": {
+    "start": "node server.js"
+  },
   "keywords": [],
   "author": "Andrey Paulino Costa, Hugo Barros Correia, João Pedro Almeida Caldeira, Luick Eduardo Neres Costa, Mizael Miranda Barbosa",
   "license": "ISC",
@@ -11,6 +13,7 @@
   "dependencies": {
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "cors": "^2.8.5"
   }
 }

@@ -5,8 +5,8 @@ import dotenv from "dotenv";
 import cors from "cors";
 
 const app = express();
-const port = process.env.PORT || 3000;
 dotenv.config();
+const port = process.env.PORT || 3000;
 const { Pool } = pkg;
 
 // Configuração do pool de conexões
@@ -460,7 +460,6 @@ app.use((err, req, res, next) => {
 });
 
 // ========== INICIALIZAÇÃO ==========
-app.listen(port, () => {
-    console.log(`✅ Servidor rodando na porta: ${port}`);
-    console.log(`🔗 URL: http://localhost:${port}`);
-});
+// Em ambientes serverless (Vercel) não devemos chamar `listen`.
+// Exportamos o `app` para ser usado pelo runtime do Vercel.
+export default app;
