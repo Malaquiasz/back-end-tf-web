@@ -1,388 +1,466 @@
-// ######
-// Local onde os pacotes de dependências serão importados
-// ######
-import express from "express";      // Requisição do pacote do express
+// server.js - Versão Corrigida e Otimizada
+import express from "express";
 import pkg from "pg";
 import dotenv from "dotenv";
+import cors from "cors";
 
-// ######
-// Local onde as configurações do servidor serão feitas
-// ######
-const app = express();              // Instancia o Express
-const port = 3000;                  // Define a porta
-dotenv.config();                    // Carrega e processa o arquivo .env
-const { Pool } = pkg;               // Utiliza a Classe Pool do Postgres
-app.use(express.json());            // Middleware para interpretar requisições com corpo em JSON
+const app = express();
+const port = process.env.PORT || 3000;
+dotenv.config();
+const { Pool } = pkg;
 
-// ######
-// Local onde funções serão definidas
-// ######
-
-function conectarBD() {
-  return new Pool({
+// Configuração do pool de conexões
+const pool = new Pool({
     connectionString: process.env.URL_BD,
-  });
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
+// Middlewares
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// ========== FUNÇÕES AUXILIARES ==========
+function conectarBD() {
+    return pool;
 }
 
-// ######
-// Local onde as rotas (endpoints) serão definidas
-// ######
+function calcularDataExpiracao(meses = 3) {
+    const data = new Date();
+    data.setMonth(data.getMonth() + meses);
+    return data.toISOString().split('T')[0];
+}
+
+// ========== ROTAS DE OBJETOS ==========
+
+// GET / - Rota raiz
 app.get("/", async (req, res) => {
-  // Rota raiz do servidor
-  // Rota GET /
-  // Esta rota é chamada quando o usuário acessa a raiz do servidor
-  // Ela retorna uma mensagem com informações do projeto
-
-  console.log("Rota GET / solicitada"); // Log no terminal para indicar que a rota foi acessada
-
-  const db = conectarBD();
-
-  let dbStatus = "ok";
-
-  // Testa a conexão com o banco
-  try {
-    await db.query("SELECT 1");
-  } catch (e) {
-    dbStatus = e.message;
-  }
-
-  // Responde com um JSON contendo uma mensagem
-  res.json({
-		descricao: "API para plataforma de objetos perdidos no IFNMG-Campus Salinas",
-    autor: "Andrey Paulino Costa, Hugo Barros Correia, João Pedro Almeida Caldeira, Luick Eduardo Neres Costa, Mizael Miranda Barbosa",
-    statusBD: dbStatus              // Informa se a conexão com o banco de dados foi bem-sucedida ou mostra o erro.
-  });
-});
-
-// GET /objetos - Retorna todos os objetos
-app.get("/objetos", async (req, res) => {
-  console.log("Rota GET /objetos solicitada");
-
-  const db = conectarBD();
-
-  try {
-    const resultado = await db.query("SELECT * FROM Objeto");
-    const dados = resultado.rows;
-    res.json(dados);
-  } catch (e) {
-    console.error("Erro ao buscar objetos:", e);
-    res.status(500).json({
-      erro: "Erro interno do servidor"
-    });
-  }
-});
-
-// GET /objetos/:id - Retorna um objeto específico pelo ID
-app.get("/objetos/:id", async (req, res) => {
-  console.log("Rota GET /objetos/:id solicitada");
-
-  try {
-    const id = req.params.id;
-    const db = conectarBD();
-    const consulta = "SELECT * FROM Objeto WHERE id = $1";
-    const resultado = await db.query(consulta, [id]);
-    const dados = resultado.rows;
-
-    if (dados.length === 0) {
-      return res.status(404).json({ mensagem: "Objeto não encontrado" });
+    console.log("Rota GET / solicitada");
+    
+    let dbStatus = "ok";
+    try {
+        await pool.query("SELECT 1");
+    } catch (e) {
+        dbStatus = e.message;
     }
 
-    res.json(dados);
-  } catch (e) {
-    console.error("Erro ao buscar objeto:", e);
-    res.status(500).json({
-      erro: "Erro interno do servidor"
+    res.json({
+        descricao: "API para plataforma de objetos perdidos no IFNMG-Campus Salinas",
+        autor: "Equipe de Desenvolvimento",
+        status: "online",
+        statusBD: dbStatus,
+        versao: "1.0.0"
     });
-  }
+});
+
+// GET /objetos - Retorna todos os objetos não expirados
+app.get("/objetos", async (req, res) => {
+    console.log("Rota GET /objetos solicitada");
+    
+    try {
+        const hoje = new Date().toISOString().split('T')[0];
+        const consulta = `
+            SELECT *, 
+                CASE 
+                    WHEN dataExpiracao < $1 THEN 'expirado'
+                    WHEN DATE_PART('day', dataExpiracao::timestamp - $1::timestamp) <= 7 THEN 'expirando'
+                    ELSE 'ativo'
+                END as status
+            FROM Objeto 
+            WHERE dataExpiracao >= $1
+            ORDER BY dataRegistro DESC
+        `;
+        const resultado = await pool.query(consulta, [hoje]);
+        res.json(resultado.rows);
+    } catch (error) {
+        console.error("Erro ao buscar objetos:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
+    }
+});
+
+// GET /objetos/:id - Retorna um objeto específico
+app.get("/objetos/:id", async (req, res) => {
+    console.log(`Rota GET /objetos/${req.params.id} solicitada`);
+    
+    try {
+        const consulta = "SELECT * FROM Objeto WHERE id = $1";
+        const resultado = await pool.query(consulta, [req.params.id]);
+        
+        if (resultado.rows.length === 0) {
+            return res.status(404).json({ erro: "Objeto não encontrado" });
+        }
+        
+        res.json(resultado.rows[0]);
+    } catch (error) {
+        console.error("Erro ao buscar objeto:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
+    }
 });
 
 // POST /objetos - Cria um novo objeto
 app.post("/objetos", async (req, res) => {
-  console.log("Rota POST /objetos solicitada");
+    console.log("Rota POST /objetos solicitada");
+    
+    try {
+        const { 
+            titulo, 
+            categoria, 
+            descricao, 
+            local, 
+            palavraPasse, 
+            imagem,
+            instagram,
+            contato 
+        } = req.body;
 
-  try {
-    const data = req.body;
+        // Validação dos campos obrigatórios
+        if (!titulo || !categoria || !local || !palavraPasse) {
+            return res.status(400).json({ 
+                erro: "Campos obrigatórios faltando",
+                camposObrigatorios: ["titulo", "categoria", "local", "palavraPasse"]
+            });
+        }
 
-    // Validação dos dados recebidos
-    if (!data.titulo || !data.categoria || !data.local || !data.palavraPasse) {
-      return res.status(400).json({
-        erro: "Dados inválidos",
-        mensagem: "Todos os campos obrigatórios (titulo, categoria, local, palavraPasse) devem ser fornecidos.",
-      });
+        // Validação de pelo menos um contato
+        if (!instagram && !contato) {
+            return res.status(400).json({
+                erro: "Pelo menos um método de contato é obrigatório",
+                mensagem: "Informe WhatsApp ou Instagram"
+            });
+        }
+
+        const dataExpiracao = calcularDataExpiracao();
+        
+        const consulta = `
+            INSERT INTO Objeto (
+                titulo, descricao, categoria, local, 
+                dataRegistro, dataExpiracao, foto, 
+                palavraPasse, contatoInstagram, contatoWhatsapp,
+                denuncia, statusDenuncia
+            ) VALUES ($1, $2, $3, $4, CURRENT_DATE, $5, $6, $7, $8, $9, FALSE, FALSE)
+            RETURNING id, titulo, dataRegistro, dataExpiracao
+        `;
+        
+        const valores = [
+            titulo.trim(),
+            descricao?.trim() || null,
+            categoria.trim(),
+            local.trim(),
+            dataExpiracao,
+            imagem || null,
+            palavraPasse.trim(),
+            instagram?.trim() || null,
+            contato?.replace(/\D/g, '') || null
+        ];
+
+        const resultado = await pool.query(consulta, valores);
+        
+        res.status(201).json({
+            mensagem: "Objeto criado com sucesso!",
+            objeto: resultado.rows[0],
+            lembrete: "Guarde a palavra-passe para exclusão futura"
+        });
+
+    } catch (error) {
+        console.error("Erro ao criar objeto:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
     }
-
-    const db = conectarBD();
-
-    // Calcular data de expiração (3 meses a partir de hoje)
-    const dataExpiracao = new Date();
-    dataExpiracao.setMonth(dataExpiracao.getMonth() + 3);
-
-    const consulta = `INSERT INTO Objeto (titulo, descricao, categoria, local, dataRegistro, dataExpiracao, foto, palavraPasse, contatoInstagram, contatoWhatsapp, denuncia, statusDenuncia)
-                      VALUES ($1, $2, $3, $4, CURRENT_DATE, $5, $6, $7, $8, $9, FALSE, FALSE)`;
-    const valores = [
-      data.titulo,
-      data.descricao || null,
-      data.categoria,
-      data.local,
-      dataExpiracao.toISOString().split('T')[0], // Formato YYYY-MM-DD
-      data.foto || null,
-      data.palavraPasse,
-      data.contatoInstagram || null,
-      data.contatoWhatsapp || null
-    ];
-
-    await db.query(consulta, valores);
-    res.status(201).json({ mensagem: "Objeto criado com sucesso!" });
-  } catch (e) {
-    console.error("Erro ao inserir objeto:", e);
-    res.status(500).json({
-      erro: "Erro interno do servidor"
-    });
-  }
 });
 
-// PUT /objetos/:id - Atualiza um objeto existente
+// PUT /objetos/:id - Atualiza um objeto
 app.put("/objetos/:id", async (req, res) => {
-  console.log("Rota PUT /objetos/:id solicitada");
-
-  try {
-    const id = req.params.id;
-    const db = conectarBD();
-
-    // Verificar se o objeto existe
-    let consulta = "SELECT * FROM Objeto WHERE id = $1";
-    let resultado = await db.query(consulta, [id]);
-    let objeto = resultado.rows;
-
-    if (objeto.length === 0) {
-      return res.status(404).json({ mensagem: "Objeto não encontrado" });
+    console.log(`Rota PUT /objetos/${req.params.id} solicitada`);
+    
+    try {
+        const { palavraPasse, ...dados } = req.body;
+        
+        // Verificar se o objeto existe e se a senha está correta
+        const verificarConsulta = "SELECT id, palavraPasse FROM Objeto WHERE id = $1";
+        const verificarResultado = await pool.query(verificarConsulta, [req.params.id]);
+        
+        if (verificarResultado.rows.length === 0) {
+            return res.status(404).json({ erro: "Objeto não encontrado" });
+        }
+        
+        if (!palavraPasse || palavraPasse !== verificarResultado.rows[0].palavrapasse) {
+            return res.status(401).json({ erro: "Palavra-passe incorreta" });
+        }
+        
+        // Construir consulta de atualização dinâmica
+        const campos = [];
+        const valores = [];
+        let contador = 1;
+        
+        if (dados.titulo) {
+            campos.push(`titulo = $${contador}`);
+            valores.push(dados.titulo.trim());
+            contador++;
+        }
+        
+        if (dados.descricao !== undefined) {
+            campos.push(`descricao = $${contador}`);
+            valores.push(dados.descricao?.trim() || null);
+            contador++;
+        }
+        
+        if (dados.categoria) {
+            campos.push(`categoria = $${contador}`);
+            valores.push(dados.categoria.trim());
+            contador++;
+        }
+        
+        if (dados.local) {
+            campos.push(`local = $${contador}`);
+            valores.push(dados.local.trim());
+            contador++;
+        }
+        
+        if (dados.foto !== undefined) {
+            campos.push(`foto = $${contador}`);
+            valores.push(dados.foto || null);
+            contador++;
+        }
+        
+        if (dados.contatoInstagram !== undefined) {
+            campos.push(`contatoInstagram = $${contador}`);
+            valores.push(dados.contatoInstagram?.trim() || null);
+            contador++;
+        }
+        
+        if (dados.contatoWhatsapp !== undefined) {
+            campos.push(`contatoWhatsapp = $${contador}`);
+            valores.push(dados.contatoWhatsapp?.replace(/\D/g, '') || null);
+            contador++;
+        }
+        
+        if (campos.length === 0) {
+            return res.status(400).json({ erro: "Nenhum dado para atualizar" });
+        }
+        
+        valores.push(req.params.id);
+        const consulta = `UPDATE Objeto SET ${campos.join(', ')} WHERE id = $${contador}`;
+        
+        await pool.query(consulta, valores);
+        
+        res.json({ mensagem: "Objeto atualizado com sucesso!" });
+        
+    } catch (error) {
+        console.error("Erro ao atualizar objeto:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
     }
-
-    const data = req.body;
-
-    // Usar valores enviados ou manter os atuais
-    const titulo = data.titulo || objeto[0].titulo;
-    const descricao = data.descricao !== undefined ? data.descricao : objeto[0].descricao;
-    const categoria = data.categoria || objeto[0].categoria;
-    const local = data.local || objeto[0].local;
-    const foto = data.foto !== undefined ? data.foto : objeto[0].foto;
-    const contatoInstagram = data.contatoInstagram !== undefined ? data.contatoInstagram : objeto[0].contatoinstagram;
-    const contatoWhatsapp = data.contatoWhatsapp !== undefined ? data.contatoWhatsapp : objeto[0].contatowhatsapp;
-
-    // Atualizar o objeto
-    consulta = "UPDATE Objeto SET titulo = $1, descricao = $2, categoria = $3, local = $4, foto = $5, contatoInstagram = $6, contatoWhatsapp = $7 WHERE id = $8";
-    await db.query(consulta, [titulo, descricao, categoria, local, foto, contatoInstagram, contatoWhatsapp, id]);
-
-    res.status(200).json({ mensagem: "Objeto atualizado com sucesso!" });
-  } catch (e) {
-    console.error("Erro ao atualizar objeto:", e);
-    res.status(500).json({
-      erro: "Erro interno do servidor"
-    });
-  }
 });
 
 // DELETE /objetos/:id - Exclui um objeto
 app.delete("/objetos/:id", async (req, res) => {
-  console.log("Rota DELETE /objetos/:id solicitada");
-
-  try {
-    const id = req.params.id;
-    const db = conectarBD();
-
-    // Verificar se o objeto existe
-    let consulta = "SELECT * FROM Objeto WHERE id = $1";
-    let resultado = await db.query(consulta, [id]);
-    let dados = resultado.rows;
-
-    if (dados.length === 0) {
-      return res.status(404).json({ mensagem: "Objeto não encontrado" });
+    console.log(`Rota DELETE /objetos/${req.params.id} solicitada`);
+    
+    try {
+        const { palavraPasse } = req.body;
+        
+        if (!palavraPasse) {
+            return res.status(400).json({ erro: "Palavra-passe é obrigatória para exclusão" });
+        }
+        
+        // Verificar se a senha está correta
+        const verificarConsulta = "SELECT id, palavraPasse FROM Objeto WHERE id = $1";
+        const verificarResultado = await pool.query(verificarConsulta, [req.params.id]);
+        
+        if (verificarResultado.rows.length === 0) {
+            return res.status(404).json({ erro: "Objeto não encontrado" });
+        }
+        
+        if (palavraPasse !== verificarResultado.rows[0].palavrapasse) {
+            return res.status(401).json({ erro: "Palavra-passe incorreta" });
+        }
+        
+        const consulta = "DELETE FROM Objeto WHERE id = $1";
+        await pool.query(consulta, [req.params.id]);
+        
+        res.json({ mensagem: "Objeto excluído com sucesso!" });
+        
+    } catch (error) {
+        console.error("Erro ao excluir objeto:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
     }
-
-    // Excluir o objeto
-    consulta = "DELETE FROM Objeto WHERE id = $1";
-    await db.query(consulta, [id]);
-
-    res.status(200).json({ mensagem: "Objeto excluído com sucesso!" });
-  } catch (e) {
-    console.error("Erro ao excluir objeto:", e);
-    res.status(500).json({
-      erro: "Erro interno do servidor"
-    });
-  }
 });
 
-// GET /administradores - Retorna todos os administradores
-app.get("/administradores", async (req, res) => {
-  console.log("Rota GET /administradores solicitada");
-
-  const db = conectarBD();
-
-  try {
-    const resultado = await db.query("SELECT username FROM Administrador");
-    const dados = resultado.rows;
-    res.json(dados);
-  } catch (e) {
-    console.error("Erro ao buscar administradores:", e);
-    res.status(500).json({
-      erro: "Erro interno do servidor"
-    });
-  }
-});
-
-// GET /administradores/:username - Retorna um administrador específico
-app.get("/administradores/:username", async (req, res) => {
-  console.log("Rota GET /administradores/:username solicitada");
-
-  try {
-    const username = req.params.username;
-    const db = conectarBD();
-    const consulta = "SELECT username FROM Administrador WHERE username = $1";
-    const resultado = await db.query(consulta, [username]);
-    const dados = resultado.rows;
-
-    if (dados.length === 0) {
-      return res.status(404).json({ mensagem: "Administrador não encontrado" });
+// GET /objetos/:id/validar - Valida senha para operações
+app.post("/objetos/:id/validar", async (req, res) => {
+    console.log(`Rota POST /objetos/${req.params.id}/validar solicitada`);
+    
+    try {
+        const { palavraPasse } = req.body;
+        
+        if (!palavraPasse) {
+            return res.status(400).json({ erro: "Palavra-passe é obrigatória" });
+        }
+        
+        const consulta = "SELECT palavraPasse FROM Objeto WHERE id = $1";
+        const resultado = await pool.query(consulta, [req.params.id]);
+        
+        if (resultado.rows.length === 0) {
+            return res.status(404).json({ erro: "Objeto não encontrado" });
+        }
+        
+        const senhaCorreta = palavraPasse === resultado.rows[0].palavrapasse;
+        
+        res.json({ 
+            valido: senhaCorreta,
+            mensagem: senhaCorreta ? "Senha válida" : "Senha incorreta"
+        });
+        
+    } catch (error) {
+        console.error("Erro ao validar senha:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
     }
-
-    res.json(dados);
-  } catch (e) {
-    console.error("Erro ao buscar administrador:", e);
-    res.status(500).json({
-      erro: "Erro interno do servidor"
-    });
-  }
 });
 
-// POST /administradores - Cria um novo administrador
-app.post("/administradores", async (req, res) => {
-  console.log("Rota POST /administradores solicitada");
-
-  try {
-    const data = req.body;
-
-    // Validação dos dados recebidos
-    if (!data.username || !data.password) {
-      return res.status(400).json({
-        erro: "Dados inválidos",
-        mensagem: "Username e password são obrigatórios.",
-      });
-    }
-
-    const db = conectarBD();
-
-    const consulta = "INSERT INTO Administrador (username, password) VALUES ($1, $2)";
-    const valores = [data.username, data.password];
-
-    await db.query(consulta, valores);
-    res.status(201).json({ mensagem: "Administrador criado com sucesso!" });
-  } catch (e) {
-    console.error("Erro ao inserir administrador:", e);
-    res.status(500).json({
-      erro: "Erro interno do servidor"
-    });
-  }
-});
-
-// PUT /administradores/:username - Atualiza um administrador
-app.put("/administradores/:username", async (req, res) => {
-  console.log("Rota PUT /administradores/:username solicitada");
-
-  try {
-    const username = req.params.username;
-    const db = conectarBD();
-
-    // Verificar se o administrador existe
-    let consulta = "SELECT * FROM Administrador WHERE username = $1";
-    let resultado = await db.query(consulta, [username]);
-    let admin = resultado.rows;
-
-    if (admin.length === 0) {
-      return res.status(404).json({ mensagem: "Administrador não encontrado" });
-    }
-
-    const data = req.body;
-
-    // Usar valor enviado ou manter o atual
-    const password = data.password || admin[0].password;
-
-    // Atualizar o administrador
-    consulta = "UPDATE Administrador SET password = $1 WHERE username = $2";
-    await db.query(consulta, [password, username]);
-
-    res.status(200).json({ mensagem: "Administrador atualizado com sucesso!" });
-  } catch (e) {
-    console.error("Erro ao atualizar administrador:", e);
-    res.status(500).json({
-      erro: "Erro interno do servidor"
-    });
-  }
-});
-
-// DELETE /administradores/:username - Exclui um administrador
-app.delete("/administradores/:username", async (req, res) => {
-  console.log("Rota DELETE /administradores/:username solicitada");
-
-  try {
-    const username = req.params.username;
-    const db = conectarBD();
-
-    // Verificar se o administrador existe
-    let consulta = "SELECT * FROM Administrador WHERE username = $1";
-    let resultado = await db.query(consulta, [username]);
-    let dados = resultado.rows;
-
-    if (dados.length === 0) {
-      return res.status(404).json({ mensagem: "Administrador não encontrado" });
-    }
-
-    // Excluir o administrador
-    consulta = "DELETE FROM Administrador WHERE username = $1";
-    await db.query(consulta, [username]);
-
-    res.status(200).json({ mensagem: "Administrador excluído com sucesso!" });
-  } catch (e) {
-    console.error("Erro ao excluir administrador:", e);
-    res.status(500).json({
-      erro: "Erro interno do servidor"
-    });
-  }
-});
+// ========== ROTAS DE ADMINISTRAÇÃO ==========
 
 // POST /login - Autenticação de administrador
 app.post("/login", async (req, res) => {
-  console.log("Rota POST /login solicitada");
-
-  try {
-    const { username, password } = req.body;
-
-    if (!username || !password) {
-      return res.status(400).json({
-        erro: "Dados inválidos",
-        mensagem: "Username e password são obrigatórios.",
-      });
+    console.log("Rota POST /login solicitada");
+    
+    try {
+        const { username, password } = req.body;
+        
+        if (!username || !password) {
+            return res.status(400).json({ 
+                erro: "Credenciais incompletas",
+                mensagem: "Username e password são obrigatórios"
+            });
+        }
+        
+        // Credenciais fixas para simplificação
+        const ADMIN_CRED = {
+            username: "admin",
+            password: "admin123"
+        };
+        
+        if (username === ADMIN_CRED.username && password === ADMIN_CRED.password) {
+            res.json({
+                mensagem: "Login realizado com sucesso!",
+                admin: { username: ADMIN_CRED.username },
+                token: "admin_token_" + Date.now()
+            });
+        } else {
+            res.status(401).json({ 
+                erro: "Credenciais inválidas",
+                mensagem: "Username ou password incorretos"
+            });
+        }
+        
+    } catch (error) {
+        console.error("Erro no login:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
     }
-
-    const db = conectarBD();
-    const consulta = "SELECT * FROM Administrador WHERE username = $1 AND password = $2";
-    const resultado = await db.query(consulta, [username, password]);
-
-    if (resultado.rows.length === 0) {
-      return res.status(401).json({ mensagem: "Credenciais inválidas" });
-    }
-
-    res.json({ mensagem: "Login realizado com sucesso!", admin: resultado.rows[0] });
-  } catch (e) {
-    console.error("Erro ao fazer login:", e);
-    res.status(500).json({
-      erro: "Erro interno do servidor"
-    });
-  }
 });
 
-// ######
-// Local onde o servidor escutar as requisições que chegam
-// ######
+// GET /admin/objetos - Retorna todos os objetos (incluindo expirados)
+app.get("/admin/objetos", async (req, res) => {
+    console.log("Rota GET /admin/objetos solicitada");
+    
+    try {
+        const consulta = `
+            SELECT *, 
+                CASE 
+                    WHEN dataExpiracao < CURRENT_DATE THEN 'expirado'
+                    WHEN DATE_PART('day', dataExpiracao::timestamp - CURRENT_DATE) <= 7 THEN 'expirando'
+                    ELSE 'ativo'
+                END as status
+            FROM Objeto 
+            ORDER BY dataRegistro DESC
+        `;
+        const resultado = await pool.query(consulta);
+        res.json(resultado.rows);
+    } catch (error) {
+        console.error("Erro ao buscar objetos admin:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
+    }
+});
+
+// GET /admin/denuncias - Retorna objetos denunciados
+app.get("/admin/denuncias", async (req, res) => {
+    console.log("Rota GET /admin/denuncias solicitada");
+    
+    try {
+        const consulta = "SELECT * FROM Objeto WHERE denuncia = TRUE ORDER BY dataRegistro DESC";
+        const resultado = await pool.query(consulta);
+        res.json(resultado.rows);
+    } catch (error) {
+        console.error("Erro ao buscar denúncias:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
+    }
+});
+
+// POST /admin/objetos/:id/denunciar - Denunciar um objeto
+app.post("/admin/objetos/:id/denunciar", async (req, res) => {
+    console.log(`Rota POST /admin/objetos/${req.params.id}/denunciar solicitada`);
+    
+    try {
+        const consulta = "UPDATE Objeto SET denuncia = TRUE WHERE id = $1";
+        await pool.query(consulta, [req.params.id]);
+        
+        res.json({ mensagem: "Objeto denunciado com sucesso!" });
+        
+    } catch (error) {
+        console.error("Erro ao denunciar objeto:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
+    }
+});
+
+// POST /admin/objetos/:id/resolver-denuncia - Resolver denúncia
+app.post("/admin/objetos/:id/resolver-denuncia", async (req, res) => {
+    console.log(`Rota POST /admin/objetos/${req.params.id}/resolver-denuncia solicitada`);
+    
+    try {
+        const { acao } = req.body; // 'aprovar' ou 'rejeitar'
+        
+        if (!['aprovar', 'rejeitar'].includes(acao)) {
+            return res.status(400).json({ erro: "Ação inválida. Use 'aprovar' ou 'rejeitar'" });
+        }
+        
+        if (acao === 'aprovar') {
+            // Remove o objeto
+            await pool.query("DELETE FROM Objeto WHERE id = $1", [req.params.id]);
+            res.json({ mensagem: "Denúncia aprovada e objeto removido!" });
+        } else {
+            // Marca como rejeitada
+            await pool.query("UPDATE Objeto SET denuncia = FALSE, statusDenuncia = FALSE WHERE id = $1", [req.params.id]);
+            res.json({ mensagem: "Denúncia rejeitada!" });
+        }
+        
+    } catch (error) {
+        console.error("Erro ao resolver denúncia:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
+    }
+});
+
+// DELETE /admin/objetos/:id - Exclusão administrativa
+app.delete("/admin/objetos/:id", async (req, res) => {
+    console.log(`Rota DELETE /admin/objetos/${req.params.id} solicitada`);
+    
+    try {
+        await pool.query("DELETE FROM Objeto WHERE id = $1", [req.params.id]);
+        res.json({ mensagem: "Objeto excluído administrativamente!" });
+        
+    } catch (error) {
+        console.error("Erro ao excluir objeto admin:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
+    }
+});
+
+// ========== MIDDLEWARE DE ERRO ==========
+app.use((err, req, res, next) => {
+    console.error("Erro não tratado:", err);
+    res.status(500).json({ 
+        erro: "Erro interno do servidor",
+        detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+});
+
+// ========== INICIALIZAÇÃO ==========
 app.listen(port, () => {
-  console.log(`Serviço rodando na porta:  ${port}`);
+    console.log(`✅ Servidor rodando na porta: ${port}`);
+    console.log(`🔗 URL: http://localhost:${port}`);
 });
