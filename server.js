@@ -255,27 +255,27 @@ app.delete("/objetos/:id", async (req, res) => {
     console.log(`Rota DELETE /objetos/${req.params.id} solicitada`);
     
     try {
-        const { palavraPasse } = req.body;
-        
+        let { palavraPasse } = req.body;
+
         if (!palavraPasse) {
             return res.status(400).json({ erro: "Palavra-passe é obrigatória para exclusão" });
         }
-        
-        // Verificar se a senha está correta
-        const verificarConsulta = "SELECT id, palavraPasse FROM Objeto WHERE id = $1";
-        const verificarResultado = await pool.query(verificarConsulta, [req.params.id]);
-        
-        if (verificarResultado.rows.length === 0) {
-            return res.status(404).json({ erro: "Objeto não encontrado" });
-        }
-        
-        if (palavraPasse !== verificarResultado.rows[0].palavrapasse) {
+
+        palavraPasse = palavraPasse.trim();
+
+        // Aplica exclusão segura comparando id + palavraPasse em uma única query.
+        const consulta = "DELETE FROM Objeto WHERE id = $1 AND palavraPasse = $2 RETURNING id";
+        const resultado = await pool.query(consulta, [req.params.id, palavraPasse]);
+
+        // Se nada foi removido, verificar se o objeto existe ou se a senha está incorreta
+        if (resultado.rowCount === 0) {
+            const existe = await pool.query("SELECT 1 FROM Objeto WHERE id = $1", [req.params.id]);
+            if (existe.rowCount === 0) {
+                return res.status(404).json({ erro: "Objeto não encontrado" });
+            }
             return res.status(401).json({ erro: "Palavra-passe incorreta" });
         }
-        
-        const consulta = "DELETE FROM Objeto WHERE id = $1";
-        await pool.query(consulta, [req.params.id]);
-        
+
         res.json({ mensagem: "Objeto excluído com sucesso!" });
         
     } catch (error) {
