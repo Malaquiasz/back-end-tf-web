@@ -97,6 +97,65 @@ app.get("/objetos/:id", async (req, res) => {
     }
 });
 
+// GET /objetos/:id/palavra/:palavraPasse - Valida palavra-passe via URL (GET)
+app.get("/objetos/:id/palavra/:palavraPasse", async (req, res) => {
+    console.log(`Rota GET /objetos/${req.params.id}/palavra solicitada`);
+    try {
+        const { id, palavraPasse } = req.params;
+
+        if (!palavraPasse) {
+            return res.status(400).json({ erro: "Palavra-passe é obrigatória" });
+        }
+
+        const consulta = "SELECT palavraPasse FROM Objeto WHERE id = $1";
+        const resultado = await pool.query(consulta, [id]);
+
+        if (resultado.rows.length === 0) {
+            return res.status(404).json({ erro: "Objeto não encontrado" });
+        }
+
+        const valido = palavraPasse === resultado.rows[0].palavrapasse;
+
+        res.json({
+            valido,
+            mensagem: valido ? "Senha válida" : "Senha incorreta"
+        });
+
+    } catch (error) {
+        console.error("Erro ao validar senha via URL:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
+    }
+});
+
+// GET /objetos/local/:local/categoria/:categoria - Filtra objetos por local e categoria
+app.get("/objetos/local/:local/categoria/:categoria", async (req, res) => {
+    console.log(`Rota GET /objetos/local/${req.params.local}/categoria/${req.params.categoria} solicitada`);
+    try {
+        const { local, categoria } = req.params;
+        const hoje = new Date().toISOString().split('T')[0];
+
+        const consulta = `
+            SELECT *, 
+                CASE 
+                    WHEN dataExpiracao < $1 THEN 'expirado'
+                    WHEN DATE_PART('day', dataExpiracao::timestamp - $1::timestamp) <= 7 THEN 'expirando'
+                    ELSE 'ativo'
+                END as status
+            FROM Objeto 
+            WHERE dataExpiracao >= $1
+              AND LOWER(local) = LOWER($2)
+              AND LOWER(categoria) = LOWER($3)
+            ORDER BY dataRegistro DESC
+        `;
+
+        const resultado = await pool.query(consulta, [hoje, local, categoria]);
+        res.json(resultado.rows);
+    } catch (error) {
+        console.error("Erro ao filtrar objetos por local/categoria:", error);
+        res.status(500).json({ erro: "Erro interno do servidor" });
+    }
+});
+
 // POST /objetos - Cria um novo objeto
 app.post("/objetos", async (req, res) => {
     console.log("Rota POST /objetos solicitada");
