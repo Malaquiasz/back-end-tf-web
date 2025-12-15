@@ -36,7 +36,7 @@ function calcularDataExpiracao(meses = 3) {
 // GET / - Rota raiz
 app.get("/", async (req, res) => {
     console.log("Rota GET / solicitada");
-    
+
     let dbStatus = "ok";
     try {
         await pool.query("SELECT 1");
@@ -46,7 +46,7 @@ app.get("/", async (req, res) => {
 
     res.json({
         descricao: "API para plataforma de objetos perdidos no IFNMG-Campus Salinas",
-        autor: "Equipe de Desenvolvimento",
+        autor: "Andrey Paulino Costa, Hugo Barros Correia, João Pedro Almeida Caldeira, Luick Eduardo Neres Costa e Mizael Miranda Barbosa ",
         status: "online",
         statusBD: dbStatus,
         versao: "1.0.0"
@@ -56,7 +56,7 @@ app.get("/", async (req, res) => {
 // GET /objetos - Retorna todos os objetos não expirados
 app.get("/objetos", async (req, res) => {
     console.log("Rota GET /objetos solicitada");
-    
+
     try {
         const hoje = new Date().toISOString().split('T')[0];
         const consulta = `
@@ -81,15 +81,15 @@ app.get("/objetos", async (req, res) => {
 // GET /objetos/:id - Retorna um objeto específico
 app.get("/objetos/:id", async (req, res) => {
     console.log(`Rota GET /objetos/${req.params.id} solicitada`);
-    
+
     try {
         const consulta = "SELECT * FROM Objeto WHERE id = $1";
         const resultado = await pool.query(consulta, [req.params.id]);
-        
+
         if (resultado.rows.length === 0) {
             return res.status(404).json({ erro: "Objeto não encontrado" });
         }
-        
+
         res.json(resultado.rows[0]);
     } catch (error) {
         console.error("Erro ao buscar objeto:", error);
@@ -159,22 +159,22 @@ app.get("/objetos/local/:local/categoria/:categoria", async (req, res) => {
 // POST /objetos - Cria um novo objeto
 app.post("/objetos", async (req, res) => {
     console.log("Rota POST /objetos solicitada");
-    
+
     try {
-        const { 
-            titulo, 
-            categoria, 
-            descricao, 
-            local, 
-            palavraPasse, 
+        const {
+            titulo,
+            categoria,
+            descricao,
+            local,
+            palavraPasse,
             imagem,
             instagram,
-            contato 
+            contato
         } = req.body;
 
         // Validação dos campos obrigatórios
         if (!titulo || !categoria || !local || !palavraPasse) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 erro: "Campos obrigatórios faltando",
                 camposObrigatorios: ["titulo", "categoria", "local", "palavraPasse"]
             });
@@ -189,7 +189,7 @@ app.post("/objetos", async (req, res) => {
         }
 
         const dataExpiracao = calcularDataExpiracao();
-        
+
         const consulta = `
             INSERT INTO Objeto (
                 titulo, descricao, categoria, local, 
@@ -199,7 +199,7 @@ app.post("/objetos", async (req, res) => {
             ) VALUES ($1, $2, $3, $4, CURRENT_DATE, $5, $6, $7, $8, $9, FALSE, FALSE)
             RETURNING id, titulo, dataRegistro, dataExpiracao
         `;
-        
+
         const valores = [
             titulo.trim(),
             descricao?.trim() || null,
@@ -213,7 +213,7 @@ app.post("/objetos", async (req, res) => {
         ];
 
         const resultado = await pool.query(consulta, valores);
-        
+
         res.status(201).json({
             mensagem: "Objeto criado com sucesso!",
             objeto: resultado.rows[0],
@@ -229,80 +229,80 @@ app.post("/objetos", async (req, res) => {
 // PUT /objetos/:id - Atualiza um objeto
 app.put("/objetos/:id", async (req, res) => {
     console.log(`Rota PUT /objetos/${req.params.id} solicitada`);
-    
+
     try {
         const { palavraPasse, ...dados } = req.body;
-        
+
         // Verificar se o objeto existe e se a senha está correta
         const verificarConsulta = "SELECT id, palavraPasse FROM Objeto WHERE id = $1";
         const verificarResultado = await pool.query(verificarConsulta, [req.params.id]);
-        
+
         if (verificarResultado.rows.length === 0) {
             return res.status(404).json({ erro: "Objeto não encontrado" });
         }
-        
+
         if (!palavraPasse || palavraPasse !== verificarResultado.rows[0].palavrapasse) {
             return res.status(401).json({ erro: "Palavra-passe incorreta" });
         }
-        
+
         // Construir consulta de atualização dinâmica
         const campos = [];
         const valores = [];
         let contador = 1;
-        
+
         if (dados.titulo) {
             campos.push(`titulo = $${contador}`);
             valores.push(dados.titulo.trim());
             contador++;
         }
-        
+
         if (dados.descricao !== undefined) {
             campos.push(`descricao = $${contador}`);
             valores.push(dados.descricao?.trim() || null);
             contador++;
         }
-        
+
         if (dados.categoria) {
             campos.push(`categoria = $${contador}`);
             valores.push(dados.categoria.trim());
             contador++;
         }
-        
+
         if (dados.local) {
             campos.push(`local = $${contador}`);
             valores.push(dados.local.trim());
             contador++;
         }
-        
+
         if (dados.foto !== undefined) {
             campos.push(`foto = $${contador}`);
             valores.push(dados.foto || null);
             contador++;
         }
-        
+
         if (dados.contatoInstagram !== undefined) {
             campos.push(`contatoInstagram = $${contador}`);
             valores.push(dados.contatoInstagram?.trim() || null);
             contador++;
         }
-        
+
         if (dados.contatoWhatsapp !== undefined) {
             campos.push(`contatoWhatsapp = $${contador}`);
             valores.push(dados.contatoWhatsapp?.replace(/\D/g, '') || null);
             contador++;
         }
-        
+
         if (campos.length === 0) {
             return res.status(400).json({ erro: "Nenhum dado para atualizar" });
         }
-        
+
         valores.push(req.params.id);
         const consulta = `UPDATE Objeto SET ${campos.join(', ')} WHERE id = $${contador}`;
-        
+
         await pool.query(consulta, valores);
-        
+
         res.json({ mensagem: "Objeto atualizado com sucesso!" });
-        
+
     } catch (error) {
         console.error("Erro ao atualizar objeto:", error);
         res.status(500).json({ erro: "Erro interno do servidor" });
@@ -312,7 +312,7 @@ app.put("/objetos/:id", async (req, res) => {
 // DELETE /objetos/:id - Exclui um objeto
 app.delete("/objetos/:id", async (req, res) => {
     console.log(`Rota DELETE /objetos/${req.params.id} solicitada`);
-    
+
     try {
         let { palavraPasse } = req.body;
 
@@ -336,7 +336,7 @@ app.delete("/objetos/:id", async (req, res) => {
         }
 
         res.json({ mensagem: "Objeto excluído com sucesso!" });
-        
+
     } catch (error) {
         console.error("Erro ao excluir objeto:", error);
         res.status(500).json({ erro: "Erro interno do servidor" });
@@ -346,28 +346,28 @@ app.delete("/objetos/:id", async (req, res) => {
 // GET /objetos/:id/validar - Valida senha para operações
 app.post("/objetos/:id/validar", async (req, res) => {
     console.log(`Rota POST /objetos/${req.params.id}/validar solicitada`);
-    
+
     try {
         const { palavraPasse } = req.body;
-        
+
         if (!palavraPasse) {
             return res.status(400).json({ erro: "Palavra-passe é obrigatória" });
         }
-        
+
         const consulta = "SELECT palavraPasse FROM Objeto WHERE id = $1";
         const resultado = await pool.query(consulta, [req.params.id]);
-        
+
         if (resultado.rows.length === 0) {
             return res.status(404).json({ erro: "Objeto não encontrado" });
         }
-        
+
         const senhaCorreta = palavraPasse === resultado.rows[0].palavrapasse;
-        
-        res.json({ 
+
+        res.json({
             valido: senhaCorreta,
             mensagem: senhaCorreta ? "Senha válida" : "Senha incorreta"
         });
-        
+
     } catch (error) {
         console.error("Erro ao validar senha:", error);
         res.status(500).json({ erro: "Erro interno do servidor" });
@@ -379,23 +379,23 @@ app.post("/objetos/:id/validar", async (req, res) => {
 // POST /login - Autenticação de administrador
 app.post("/login", async (req, res) => {
     console.log("Rota POST /login solicitada");
-    
+
     try {
         const { username, password } = req.body;
-        
+
         if (!username || !password) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 erro: "Credenciais incompletas",
                 mensagem: "Username e password são obrigatórios"
             });
         }
-        
+
         // Credenciais fixas para simplificação
         const ADMIN_CRED = {
             username: "admin",
             password: "admin123"
         };
-        
+
         if (username === ADMIN_CRED.username && password === ADMIN_CRED.password) {
             res.json({
                 mensagem: "Login realizado com sucesso!",
@@ -403,12 +403,12 @@ app.post("/login", async (req, res) => {
                 token: "admin_token_" + Date.now()
             });
         } else {
-            res.status(401).json({ 
+            res.status(401).json({
                 erro: "Credenciais inválidas",
                 mensagem: "Username ou password incorretos"
             });
         }
-        
+
     } catch (error) {
         console.error("Erro no login:", error);
         res.status(500).json({ erro: "Erro interno do servidor" });
@@ -418,7 +418,7 @@ app.post("/login", async (req, res) => {
 // GET /admin/objetos - Retorna todos os objetos (incluindo expirados)
 app.get("/admin/objetos", async (req, res) => {
     console.log("Rota GET /admin/objetos solicitada");
-    
+
     try {
         const consulta = `
             SELECT *, 
@@ -441,7 +441,7 @@ app.get("/admin/objetos", async (req, res) => {
 // GET /admin/denuncias - Retorna objetos denunciados
 app.get("/admin/denuncias", async (req, res) => {
     console.log("Rota GET /admin/denuncias solicitada");
-    
+
     try {
         const consulta = "SELECT * FROM Objeto WHERE denuncia = TRUE ORDER BY dataRegistro DESC";
         const resultado = await pool.query(consulta);
@@ -455,13 +455,13 @@ app.get("/admin/denuncias", async (req, res) => {
 // POST /admin/objetos/:id/denunciar - Denunciar um objeto
 app.post("/admin/objetos/:id/denunciar", async (req, res) => {
     console.log(`Rota POST /admin/objetos/${req.params.id}/denunciar solicitada`);
-    
+
     try {
         const consulta = "UPDATE Objeto SET denuncia = TRUE WHERE id = $1";
         await pool.query(consulta, [req.params.id]);
-        
+
         res.json({ mensagem: "Objeto denunciado com sucesso!" });
-        
+
     } catch (error) {
         console.error("Erro ao denunciar objeto:", error);
         res.status(500).json({ erro: "Erro interno do servidor" });
@@ -471,14 +471,14 @@ app.post("/admin/objetos/:id/denunciar", async (req, res) => {
 // POST /admin/objetos/:id/resolver-denuncia - Resolver denúncia
 app.post("/admin/objetos/:id/resolver-denuncia", async (req, res) => {
     console.log(`Rota POST /admin/objetos/${req.params.id}/resolver-denuncia solicitada`);
-    
+
     try {
         const { acao } = req.body; // 'aprovar' ou 'rejeitar'
-        
+
         if (!['aprovar', 'rejeitar'].includes(acao)) {
             return res.status(400).json({ erro: "Ação inválida. Use 'aprovar' ou 'rejeitar'" });
         }
-        
+
         if (acao === 'aprovar') {
             // Remove o objeto
             await pool.query("DELETE FROM Objeto WHERE id = $1", [req.params.id]);
@@ -488,7 +488,7 @@ app.post("/admin/objetos/:id/resolver-denuncia", async (req, res) => {
             await pool.query("UPDATE Objeto SET denuncia = FALSE, statusDenuncia = FALSE WHERE id = $1", [req.params.id]);
             res.json({ mensagem: "Denúncia rejeitada!" });
         }
-        
+
     } catch (error) {
         console.error("Erro ao resolver denúncia:", error);
         res.status(500).json({ erro: "Erro interno do servidor" });
@@ -498,11 +498,11 @@ app.post("/admin/objetos/:id/resolver-denuncia", async (req, res) => {
 // DELETE /admin/objetos/:id - Exclusão administrativa
 app.delete("/admin/objetos/:id", async (req, res) => {
     console.log(`Rota DELETE /admin/objetos/${req.params.id} solicitada`);
-    
+
     try {
         await pool.query("DELETE FROM Objeto WHERE id = $1", [req.params.id]);
         res.json({ mensagem: "Objeto excluído administrativamente!" });
-        
+
     } catch (error) {
         console.error("Erro ao excluir objeto admin:", error);
         res.status(500).json({ erro: "Erro interno do servidor" });
@@ -512,7 +512,7 @@ app.delete("/admin/objetos/:id", async (req, res) => {
 // ========== MIDDLEWARE DE ERRO ==========
 app.use((err, req, res, next) => {
     console.error("Erro não tratado:", err);
-    res.status(500).json({ 
+    res.status(500).json({
         erro: "Erro interno do servidor",
         detalhes: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
